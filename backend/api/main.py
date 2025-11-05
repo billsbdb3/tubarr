@@ -534,7 +534,8 @@ def get_settings():
         "defaultPath": os.getenv('TUBARR_DOWNLOADS_PATH', '/downloads'),
         "defaultQuality": "1080p",
         "autoSync": False,
-        "syncInterval": 15
+        "syncInterval": 15,
+        "theme": "dark"
     }
 
 @app.post("/api/v1/settings")
