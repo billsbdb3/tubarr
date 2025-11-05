@@ -18,7 +18,7 @@ from backend.models import Base, Channel, Video, History
 from backend.services.downloader import Downloader
 from backend.services.monitor import Monitor
 
-app = FastAPI(title="Tubarr", version="1.0.0")
+app = FastAPI(title="Tubarr", version="1.0.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -132,10 +132,6 @@ class SearchResult(BaseModel):
     subscriber_count: Optional[int] = None
 
 # API Routes
-@app.get("/")
-def root():
-    return {"app": "Tubarr", "version": "1.0.0"}
-
 @app.get("/api/v1/search")
 def search_channels(query: str):
     ydl_opts = {'quiet': True, 'extract_flat': True}
