@@ -962,7 +962,9 @@ function App() {
             <h3 style={{marginBottom: '15px'}}>System Information</h3>
             <div style={{display: 'grid', gridTemplateColumns: '200px 1fr', gap: '10px', fontSize: '14px'}}>
               <span style={{color: 'var(--text-secondary)'}}>Version:</span>
-              <span>1.0.0</span>
+              <span>{status.app_version || '1.0.2'}</span>
+              <span style={{color: 'var(--text-secondary)'}}>yt-dlp Version:</span>
+              <span>{status.ytdlp_version || 'unknown'}</span>
               <span style={{color: 'var(--text-secondary)'}}>Backend Status:</span>
               <span style={{color: '#5d9cec'}}>● Running</span>
               <span style={{color: 'var(--text-secondary)'}}>Database:</span>
