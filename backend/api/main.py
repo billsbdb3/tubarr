@@ -18,7 +18,7 @@ from backend.models import Base, Channel, Video, History
 from backend.services.downloader import Downloader
 from backend.services.monitor import Monitor
 
-app = FastAPI(title="Tubarr", version="1.0.1")
+app = FastAPI(title="Tubarr", version="1.0.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -517,10 +517,18 @@ def system_status(db: Session = Depends(get_db)):
     video_count = db.query(Video).count()
     downloaded_count = db.query(Video).filter_by(downloaded=True).count()
     
+    # Get yt-dlp version
+    try:
+        ytdlp_version = yt_dlp.version.__version__
+    except:
+        ytdlp_version = "unknown"
+    
     return {
         "channels": channel_count,
         "videos": video_count,
-        "downloaded": downloaded_count
+        "downloaded": downloaded_count,
+        "ytdlp_version": ytdlp_version,
+        "app_version": "1.0.2"
     }
 
 @app.get("/api/v1/settings")
