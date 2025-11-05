@@ -31,6 +31,7 @@ RUN mkdir -p /config /downloads
 # Set environment variables
 ENV TUBARR_CONFIG_PATH=/config
 ENV TUBARR_DOWNLOADS_PATH=/downloads
+ENV STATIC_DIR=/app/frontend/build
 
 WORKDIR /app
 
