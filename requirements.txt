@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+yt-dlp
+feedparser
+apscheduler
+requests

@@ -1,0 +1,409 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import './App.css';
+
+function App() {
+  const [view, setView] = useState('home');
+  const [channels, setChannels] = useState([]);
+  const [videos, setVideos] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [selectedChannel, setSelectedChannel] = useState(null);
+  const [channelDetail, setChannelDetail] = useState(null);
+  const [playlists, setPlaylists] = useState([]);
+  const [playlistDetail, setPlaylistDetail] = useState(null);
+  const [videoLimit, setVideoLimit] = useState(50);
+  const [channelPreview, setChannelPreview] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [newChannel, setNewChannel] = useState({
+    channel_url: '',
+    download_path: '/Users/bberry/Downloads/Tubarr',
+    quality: '1080p'
+  });
+  const [status, setStatus] = useState({});
+
+  useEffect(() => {
+    loadChannels();
+    loadVideos();
+    loadStatus();
+  }, []);
+
+  const loadChannels = async () => {
+    const res = await axios.get('/api/v1/channel');
+    setChannels(res.data);
+  };
+
+  const loadVideos = async () => {
+    const res = await axios.get('/api/v1/video');
+    setVideos(res.data);
+  };
+
+  const loadStatus = async () => {
+    const res = await axios.get('/api/v1/system/status');
+    setStatus(res.data);
+  };
+
+  const searchChannels = async (e) => {
+    e.preventDefault();
+    const res = await axios.get(`/api/v1/search?query=${searchQuery}`);
+    setSearchResults(res.data);
+    setView('search');
+  };
+
+  const addChannelFromSearch = async (result) => {
+    await axios.post('/api/v1/channel', {
+      channel_url: result.channel_url,
+      download_path: '/Users/bberry/Downloads/Tubarr',
+      quality: '1080p',
+      monitored: true
+    });
+    loadChannels();
+    setView('home');
+  };
+
+  const addChannel = async (e) => {
+    e.preventDefault();
+    await axios.post('/api/v1/channel', newChannel);
+    setNewChannel({ channel_url: '', download_path: '/Users/bberry/Downloads/Tubarr', quality: '1080p' });
+    loadChannels();
+  };
+
+  const deleteChannel = async (id) => {
+    await axios.delete(`/api/v1/channel/${id}`);
+    loadChannels();
+  };
+
+  const viewChannelDetail = async (channel) => {
+    setLoading(true);
+    setView('channel-detail');
+    try {
+      const res = await axios.get(`/api/v1/channel/${channel.id}?limit=${videoLimit}`);
+      setChannelDetail(res.data);
+      const playlistRes = await axios.get(`/api/v1/channel/${channel.id}/playlists`);
+      setPlaylists(playlistRes.data);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMoreVideos = async () => {
+    const newLimit = videoLimit + 25;
+    setVideoLimit(newLimit);
+    const res = await axios.get(`/api/v1/channel/${channelDetail.channel.id}?limit=${newLimit}`);
+    setChannelDetail(res.data);
+  };
+
+  const viewPlaylist = async (playlistId) => {
+    const res = await axios.get(`/api/v1/playlist/${playlistId}`);
+    setPlaylistDetail(res.data);
+    setView('playlist-detail');
+  };
+
+  const previewChannel = async (result) => {
+    const res = await axios.get(`/api/v1/preview/channel/${result.channel_id}`);
+    setChannelPreview({...res.data, search_result: result});
+    setView('channel-preview');
+  };
+
+  const formatDuration = (seconds) => {
+    if (!seconds) return '';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}` : `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const downloadVideo = async (videoId) => {
+    await axios.post(`/api/v1/video/${videoId}/download`);
+    loadVideos();
+    if (channelDetail) {
+      const res = await axios.get(`/api/v1/channel/${channelDetail.channel.id}`);
+      setChannelDetail(res.data);
+    }
+  };
+
+  const downloadVideoById = async (youtubeVideoId) => {
+    await axios.post(`/api/v1/video/download/${youtubeVideoId}`, {
+      channel_id: channelDetail.channel.id
+    });
+    loadVideos();
+    const res = await axios.get(`/api/v1/channel/${channelDetail.channel.id}`);
+    setChannelDetail(res.data);
+  };
+
+  const syncChannels = async () => {
+    await axios.post('/api/v1/command/sync');
+    setTimeout(() => {
+      loadVideos();
+      loadStatus();
+    }, 1000);
+  };
+
+  return (
+    <div className="app">
+      <div className="sidebar">
+        <h1>📺 Tubarr</h1>
+        <nav>
+          <button className={view === 'home' ? 'active' : ''} onClick={() => setView('home')}>
+            🏠 Channels
+          </button>
+          <button className={view === 'search' ? 'active' : ''} onClick={() => setView('search')}>
+            🔍 Search
+          </button>
+          <button className={view === 'add' ? 'active' : ''} onClick={() => setView('add')}>
+            ➕ Add Channel
+          </button>
+          <button onClick={syncChannels}>
+            🔄 Sync All
+          </button>
+        </nav>
+      </div>
+
+      <div className="main-content">
+
+      {view === 'home' && (
+        <>
+          <div className="stats">
+            <div className="stat">
+              <h3>{status.channels || 0}</h3>
+              <p>Channels</p>
+            </div>
+            <div className="stat">
+              <h3>{status.videos || 0}</h3>
+              <p>Videos</p>
+            </div>
+            <div className="stat">
+              <h3>{status.downloaded || 0}</h3>
+              <p>Downloaded</p>
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="section-header">
+              <h2>Channels ({channels.length})</h2>
+              <button onClick={syncChannels} className="sync-btn">🔄 Sync Now</button>
+            </div>
+            <div className="channels">
+              {channels.map(channel => (
+                <div key={channel.id} className="channel-card" onClick={() => viewChannelDetail(channel)}>
+                  {channel.thumbnail ? (
+                    <img src={channel.thumbnail} alt={channel.channel_name} style={{width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover', marginBottom: '10px'}} />
+                  ) : (
+                    <div style={{width: '60px', height: '60px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px', fontSize: '24px', fontWeight: 'bold', color: 'white'}}>
+                      {channel.channel_name.charAt(0)}
+                    </div>
+                  )}
+                  <h3>{channel.channel_name}</h3>
+                  <p>Quality: {channel.quality}</p>
+                  <p>Status: {channel.monitored ? '✅ Monitored' : '⏸️ Paused'}</p>
+                  <button onClick={(e) => {e.stopPropagation(); deleteChannel(channel.id);}} className="delete-btn">Delete</button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="section">
+            <h2>Recent Videos ({videos.length})</h2>
+            <div className="videos">
+              {videos.slice(0, 50).map(video => (
+                <div key={video.id} className="video-card">
+                  <h4>{video.title}</h4>
+                  <p>{video.downloaded ? '✅ Downloaded' : '⏳ Pending'}</p>
+                  {!video.downloaded && (
+                    <button onClick={() => downloadVideo(video.id)}>Download</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {view === 'search' && (
+        <div className="section">
+          <h2>Search Channels</h2>
+          <form onSubmit={searchChannels}>
+            <input
+              type="text"
+              placeholder="Search for YouTube channels..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              required
+            />
+            <button type="submit">Search</button>
+          </form>
+
+          {searchResults.length > 0 && (
+            <div className="search-results">
+              {searchResults.map((result, idx) => (
+                <div key={idx} className="search-result" style={{display: 'flex', flexDirection: 'column', gap: '10px', padding: '15px', border: '1px solid #333', borderRadius: '8px', marginBottom: '10px'}}>
+                  <div style={{display: 'flex', gap: '15px', alignItems: 'center'}}>
+                    <img src={result.thumbnail} alt={result.channel_name} style={{width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover'}} onError={(e) => e.target.style.display = 'none'} />
+                    <div style={{flex: 1}}>
+                      <h3 style={{margin: 0}}>{result.channel_name}</h3>
+                      <p style={{margin: '5px 0 0 0', fontSize: '14px', color: '#888'}}>{result.subscriber_count ? `${result.subscriber_count.toLocaleString()} subscribers` : ''}</p>
+                    </div>
+                  </div>
+                  <div style={{display: 'flex', gap: '10px'}}>
+                    <button onClick={() => previewChannel(result)} style={{flex: 1}}>Preview</button>
+                    <button onClick={() => addChannelFromSearch(result)} style={{flex: 1}}>Add Channel</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {view === 'add' && (
+        <div className="section">
+          <h2>Add Channel Manually</h2>
+          <form onSubmit={addChannel}>
+            <input
+              type="text"
+              placeholder="Channel URL"
+              value={newChannel.channel_url}
+              onChange={(e) => setNewChannel({...newChannel, channel_url: e.target.value})}
+              required
+            />
+            <input
+              type="text"
+              placeholder="Download Path"
+              value={newChannel.download_path}
+              onChange={(e) => setNewChannel({...newChannel, download_path: e.target.value})}
+            />
+            <select
+              value={newChannel.quality}
+              onChange={(e) => setNewChannel({...newChannel, quality: e.target.value})}
+            >
+              <option value="2160p">2160p (4K)</option>
+              <option value="1080p">1080p (Full HD)</option>
+              <option value="720p">720p (HD)</option>
+              <option value="480p">480p (SD)</option>
+              <option value="best">Best Available</option>
+            </select>
+            <button type="submit">Add Channel</button>
+          </form>
+        </div>
+      )}
+
+      {view === 'channel-detail' && (
+        <div className="section">
+          <button onClick={() => setView('home')}>← Back</button>
+          {loading ? (
+            <div style={{textAlign: 'center', padding: '50px'}}>
+              <div style={{fontSize: '48px'}}>⏳</div>
+              <p>Loading channel videos...</p>
+            </div>
+          ) : channelDetail && (
+            <>
+              <div style={{display: 'flex', gap: '20px', alignItems: 'flex-start', marginBottom: '30px', padding: '20px', background: '#1a1a1a', borderRadius: '8px'}}>
+                {channelDetail.channel.thumbnail && (
+                  <img src={channelDetail.channel.thumbnail} alt={channelDetail.channel.channel_name} style={{width: '120px', height: '120px', borderRadius: '50%', objectFit: 'cover'}} />
+                )}
+                <div style={{flex: 1}}>
+                  <h2 style={{margin: '0 0 10px 0'}}>{channelDetail.channel.channel_name}</h2>
+                  <p style={{margin: '5px 0', color: '#888'}}>
+                    <strong>Total Videos:</strong> {channelDetail.total_videos} | 
+                    <strong> Showing:</strong> {channelDetail.loaded_videos} | 
+                    <strong> Downloaded:</strong> {channelDetail.downloaded_count}
+                  </p>
+                  <p style={{margin: '5px 0', color: '#888'}}>
+                    <strong>Quality:</strong> {channelDetail.channel.quality} | 
+                    <strong> Status:</strong> {channelDetail.channel.monitored ? '✅ Monitored' : '⏸️ Paused'}
+                  </p>
+                  <p style={{margin: '5px 0', color: '#888', fontSize: '12px'}}>
+                    <strong>Download Path:</strong> {channelDetail.channel.download_path}
+                  </p>
+                  <p style={{margin: '5px 0', color: '#888', fontSize: '12px'}}>
+                    <strong>Added:</strong> {new Date(channelDetail.channel.added).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+          
+          
+          {playlists.length > 0 && (
+            <div style={{marginBottom: '20px'}}>
+              <h3>Playlists</h3>
+              <div className="videos">
+                {playlists.map(playlist => (
+                  <div 
+                    key={playlist.playlist_id} 
+                    className="video-card" 
+                    onClick={() => viewPlaylist(playlist.playlist_id)}
+                    style={{cursor: 'pointer'}}
+                  >
+                    <h4>📁 {playlist.title}</h4>
+                    <p>{playlist.video_count} videos</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <h3>All Videos</h3>
+          <div className="videos">
+            {channelDetail.videos.map(video => (
+              <div key={video.video_id} className="video-card">
+                <img src={video.thumbnail} alt={video.title} style={{width: '100%', borderRadius: '4px'}} />
+                <h4>{video.title}</h4>
+                <p style={{fontSize: '12px', color: '#888'}}>
+                  {formatDuration(video.duration)} {video.view_count && `• ${(video.view_count / 1000).toFixed(0)}K views`}
+                </p>
+                <p>{video.downloaded ? '✅ Downloaded' : '⏳ Not Downloaded'}</p>
+                {!video.downloaded && (
+                  <button onClick={() => downloadVideoById(video.video_id)}>Download</button>
+                )}
+              </div>
+            ))}
+          </div>
+          {channelDetail.loaded_videos < channelDetail.total_videos && (
+            <button onClick={loadMoreVideos} style={{marginTop: '20px', width: '100%'}}>
+              Load More Videos
+            </button>
+          )}
+            </>
+          )}
+        </div>
+      )}
+
+      {view === 'playlist-detail' && playlistDetail && (
+        <div className="section">
+          <button onClick={() => setView('channel-detail')}>← Back to Channel</button>
+          <h2>Playlist Videos</h2>
+          <div className="videos">
+            {playlistDetail.map(video => (
+              <div key={video.video_id} className="video-card">
+                <img src={`https://i.ytimg.com/vi/${video.video_id}/mqdefault.jpg`} alt={video.title} style={{width: '100%', borderRadius: '4px'}} />
+                <h4>{video.title}</h4>
+                <button onClick={() => downloadVideoById(video.video_id)}>Download</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {view === 'channel-preview' && channelPreview && (
+        <div className="section">
+          <button onClick={() => setView('search')}>← Back to Search</button>
+          <h2>{channelPreview.channel_name}</h2>
+          <p>{channelPreview.search_result.subscriber_count ? `${channelPreview.search_result.subscriber_count.toLocaleString()} subscribers` : ''}</p>
+          <button onClick={() => addChannelFromSearch(channelPreview.search_result)} style={{marginBottom: '20px'}}>Add This Channel</button>
+          
+          <h3>Recent Videos</h3>
+          <div className="videos">
+            {channelPreview.videos.map(video => (
+              <div key={video.video_id} className="video-card">
+                <img src={video.thumbnail} alt={video.title} style={{width: '100%', borderRadius: '4px'}} />
+                <h4>{video.title}</h4>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      </div>
+    </div>
+  );
+}
+
+export default App;

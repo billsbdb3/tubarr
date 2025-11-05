@@ -1,0 +1,12 @@
+node_modules
+__pycache__
+*.pyc
+*.log
+.git
+.gitignore
+*.db
+config
+downloads
+frontend/build
+backend.log
+frontend.log
