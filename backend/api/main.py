@@ -31,6 +31,11 @@ app.add_middleware(
 CONFIG_PATH = os.getenv('TUBARR_CONFIG_PATH', 'data')
 os.makedirs(CONFIG_PATH, exist_ok=True)
 
+# Mount static files from frontend build
+STATIC_DIR = os.getenv('STATIC_DIR', '/app/frontend/build')
+if os.path.exists(os.path.join(STATIC_DIR, 'static')):
+    app.mount("/static", StaticFiles(directory=os.path.join(STATIC_DIR, 'static')), name="static")
+
 engine = create_engine(f'sqlite:///{CONFIG_PATH}/tubarr.db')
 Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(bind=engine)
