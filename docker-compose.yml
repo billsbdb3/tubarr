@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   tubarr:
-    image: tubarr/tubarr:latest
+    image: ghcr.io/billsbdb3/tubarr:latest
     container_name: tubarr
     ports:
       - "7171:7171"

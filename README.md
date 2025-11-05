@@ -22,7 +22,7 @@ version: '3.8'
 
 services:
   tubarr:
-    image: tubarr/tubarr:latest
+    image: ghcr.io/billsbdb3/tubarr:latest
     container_name: tubarr
     ports:
       - "7171:7171"
@@ -60,7 +60,7 @@ docker run -d \
   -e PGID=1000 \
   -e TZ=America/New_York \
   --restart unless-stopped \
-  tubarr/tubarr:latest
+  ghcr.io/billsbdb3/tubarr:latest
 ```
 
 ## Parameters
@@ -101,7 +101,7 @@ npm start
 ### Build Docker Image
 
 ```bash
-docker build -t tubarr/tubarr:latest .
+docker build -t ghcr.io/billsbdb3/tubarr:latest .
 ```
 
 ## Usage
