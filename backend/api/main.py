@@ -27,13 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files for frontend
-STATIC_DIR = os.getenv('STATIC_DIR', '/app/frontend/build')
-if os.path.exists(STATIC_DIR):
-    static_files = os.path.join(STATIC_DIR, 'static')
-    if os.path.exists(static_files):
-        app.mount("/static", StaticFiles(directory=static_files), name="static")
-
 # Use environment variable for config path
 CONFIG_PATH = os.getenv('TUBARR_CONFIG_PATH', 'data')
 os.makedirs(CONFIG_PATH, exist_ok=True)
@@ -733,12 +726,20 @@ scheduler.start()
 # Serve frontend
 @app.get("/")
 async def serve_frontend():
-    index_path = os.path.join(STATIC_DIR, 'index.html')
-    print(f"Looking for index.html at: {index_path}")
-    print(f"File exists: {os.path.exists(index_path)}")
+    static_dir = os.getenv('STATIC_DIR', '/app/frontend/build')
+    index_path = os.path.join(static_dir, 'index.html')
+    
+    # Mount static files if not already mounted
+    static_files = os.path.join(static_dir, 'static')
+    if os.path.exists(static_files):
+        try:
+            app.mount("/static", StaticFiles(directory=static_files), name="static")
+        except:
+            pass  # Already mounted
+    
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"app": "Tubarr", "version": "1.0.0", "static_dir": STATIC_DIR, "index_exists": os.path.exists(index_path)}
+    return {"app": "Tubarr", "version": "1.0.0", "static_dir": static_dir, "index_path": index_path, "exists": os.path.exists(index_path)}
 
 @app.get("/{full_path:path}")
 async def catch_all(full_path: str):
@@ -746,7 +747,8 @@ async def catch_all(full_path: str):
     if full_path.startswith("api/"):
         raise HTTPException(404)
     
-    index_path = os.path.join(STATIC_DIR, 'index.html')
+    static_dir = os.getenv('STATIC_DIR', '/app/frontend/build')
+    index_path = os.path.join(static_dir, 'index.html')
     if os.path.exists(index_path):
         return FileResponse(index_path)
     raise HTTPException(404)
