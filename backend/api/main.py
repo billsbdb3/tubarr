@@ -734,9 +734,11 @@ scheduler.start()
 @app.get("/")
 async def serve_frontend():
     index_path = os.path.join(STATIC_DIR, 'index.html')
+    print(f"Looking for index.html at: {index_path}")
+    print(f"File exists: {os.path.exists(index_path)}")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"app": "Tubarr", "version": "1.0.0"}
+    return {"app": "Tubarr", "version": "1.0.0", "static_dir": STATIC_DIR, "index_exists": os.path.exists(index_path)}
 
 @app.get("/{full_path:path}")
 async def catch_all(full_path: str):
