@@ -28,7 +28,7 @@ function App() {
   const [settingsTab, setSettingsTab] = useState('general');
   const [settings, setSettings] = useState({
     apiKey: '',
-    defaultPath: '/Users/bberry/Downloads/Tubarr',
+    defaultPath: '/downloads',
     defaultQuality: '1080p',
     autoSync: true,
     syncInterval: 15,
@@ -36,7 +36,7 @@ function App() {
   });
   const [newChannel, setNewChannel] = useState({
     channel_url: '',
-    download_path: '/Users/bberry/Downloads/Tubarr',
+    download_path: '/downloads',
     quality: '1080p'
   });
   const [status, setStatus] = useState({});
@@ -153,7 +153,7 @@ function App() {
       setAddingChannel(result.channel_id);
       const response = await axios.post('/api/v1/channel', {
         channel_url: result.channel_url,
-        download_path: '/Users/bberry/Downloads/Tubarr',
+        download_path: settings.defaultPath || '/downloads',
         quality: '1080p',
         monitored: true
       });
@@ -175,7 +175,7 @@ function App() {
   const addChannel = async (e) => {
     e.preventDefault();
     await axios.post('/api/v1/channel', newChannel);
-    setNewChannel({ channel_url: '', download_path: '/Users/bberry/Downloads/Tubarr', quality: '1080p' });
+    setNewChannel({ channel_url: '', download_path: settings.defaultPath || '/downloads', quality: '1080p' });
     loadChannels();
   };
 
