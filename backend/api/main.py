@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
@@ -25,6 +26,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files for frontend
+static_path = os.path.join(os.path.dirname(__file__), '../../frontend/build')
+if os.path.exists(static_path):
+    app.mount("/static", StaticFiles(directory=os.path.join(static_path, "static")), name="static")
 
 # Use environment variable for config path
 CONFIG_PATH = os.getenv('TUBARR_CONFIG_PATH', 'data')
@@ -722,6 +728,27 @@ scheduler = BackgroundScheduler()
 #     scheduler.shutdown()
 scheduler.start()
 
+# Serve frontend
+@app.get("/")
+async def serve_frontend():
+    static_path = os.path.join(os.path.dirname(__file__), '../../frontend/build')
+    index_path = os.path.join(static_path, 'index.html')
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"app": "Tubarr", "version": "1.0.0"}
+
+@app.get("/{full_path:path}")
+async def catch_all(full_path: str):
+    # Don't catch API routes
+    if full_path.startswith("api/"):
+        raise HTTPException(404)
+    
+    static_path = os.path.join(os.path.dirname(__file__), '../../frontend/build')
+    index_path = os.path.join(static_path, 'index.html')
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(404)
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7878)
+    uvicorn.run(app, host="0.0.0.0", port=7171)
