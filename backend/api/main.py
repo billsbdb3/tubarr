@@ -739,8 +739,8 @@ async def serve_frontend():
 
 @app.get("/{full_path:path}")
 async def catch_all(full_path: str):
-    # Don't catch API routes
-    if full_path.startswith("api/"):
+    # Don't catch API routes or static files
+    if full_path.startswith("api/") or full_path.startswith("static/"):
         raise HTTPException(404)
     
     static_dir = os.getenv('STATIC_DIR', '/app/frontend/build')
