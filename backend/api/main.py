@@ -451,26 +451,37 @@ def unmonitor_playlist(playlist_id: str, db: Session = Depends(get_db)):
 def download_playlist_videos(playlist_id: str, channel_id: int):
     db = SessionLocal()
     try:
+        print(f"Starting playlist download: {playlist_id} for channel {channel_id}")
         channel = db.query(Channel).filter_by(id=channel_id).first()
         playlist = db.query(Playlist).filter_by(playlist_id=playlist_id).first()
         if not channel or not playlist:
+            print(f"ERROR: Channel or playlist not found. Channel: {channel}, Playlist: {playlist}")
             return
         
+        print(f"Fetching videos for playlist: {playlist.title}")
         monitor = Monitor(db)
         videos = monitor.get_playlist_videos(f'https://www.youtube.com/playlist?list={playlist_id}')
+        print(f"Found {len(videos)} videos in playlist")
+        
         settings = get_settings()
         downloader = Downloader()
         
         # Get playlist thumbnail from first video
         playlist_thumbnail = None
         if videos and len(videos) > 0:
-            first_video_id = videos[0]['video_id']
-            playlist_thumbnail = f"https://i.ytimg.com/vi/{first_video_id}/maxresdefault.jpg"
+            first_video_id = videos[0].get('video_id')
+            if first_video_id:
+                playlist_thumbnail = f"https://i.ytimg.com/vi/{first_video_id}/maxresdefault.jpg"
+        
+        downloaded_count = 0
+        skipped_count = 0
+        failed_count = 0
         
         for idx, vid in enumerate(videos, 1):
             # Skip if video_id is None (unavailable/hidden videos)
             if not vid.get('video_id'):
                 print(f"Skipping unavailable video at position {idx}")
+                skipped_count += 1
                 continue
             
             video = db.query(Video).filter_by(video_id=vid['video_id']).first()
@@ -489,6 +500,7 @@ def download_playlist_videos(playlist_id: str, channel_id: int):
             
             if not video.downloaded:
                 try:
+                    print(f"Downloading video {idx}/{len(videos)}: {video.title}")
                     video.download_status = 'downloading'
                     db.commit()
                     
@@ -509,6 +521,8 @@ def download_playlist_videos(playlist_id: str, channel_id: int):
                     video.download_path = path
                     video.download_status = 'completed'
                     db.commit()
+                    downloaded_count += 1
+                    print(f"Successfully downloaded: {video.title}")
                     
                     # Download season poster on first video
                     if idx == 1 and playlist_thumbnail:
@@ -519,7 +533,16 @@ def download_playlist_videos(playlist_id: str, channel_id: int):
                 except Exception as e:
                     video.download_status = 'failed'
                     db.commit()
-                    print(f"Failed to download {video.title}: {e}")
+                    failed_count += 1
+                    print(f"ERROR downloading {video.title}: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+        
+        print(f"Playlist download complete. Downloaded: {downloaded_count}, Skipped: {skipped_count}, Failed: {failed_count}")
+    except Exception as e:
+        print(f"FATAL ERROR in download_playlist_videos: {str(e)}")
+        import traceback
+        traceback.print_exc()
     finally:
         db.close()
 

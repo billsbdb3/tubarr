@@ -104,11 +104,12 @@ class Downloader:
             # Create NFO file for media servers
             self._create_nfo(info, season_dir, safe_channel, season_number, episode_number or 1)
             
-            # Download episode thumbnail separately for media servers
+            # Download episode thumbnail for media servers
+            # Media servers look for: filename.jpg (same as video but .jpg extension)
             if info.get('thumbnail'):
-                safe_title = self._sanitize(info.get('title', 'video'))
-                ep_num = episode_number or 1
-                thumb_path = os.path.join(season_dir, f"{safe_channel} - S{season_number:02d}E{ep_num:03d} - {safe_title}-thumb.jpg")
+                # Get the base filename without extension
+                base_filename = os.path.splitext(filename)[0]
+                thumb_path = f"{base_filename}.jpg"
                 self._download_image(info['thumbnail'], thumb_path)
             
             return filename
