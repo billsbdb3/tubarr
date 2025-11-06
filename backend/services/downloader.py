@@ -26,17 +26,22 @@ class Downloader:
                 'thumbnail': thumbnail
             }
     
-    def download_video(self, video_id, channel_name, download_path, quality='1080p', season_number=1, episode_number=None, naming_format='standard', custom_pattern=None):
+    def download_video(self, video_id, channel_name, download_path, quality='1080p', season_number=1, episode_number=None, naming_format='standard', custom_pattern=None, season_name=None):
         """
         Download with TV show structure:
         /downloads/Channel Name/Season 01/Channel Name - S01E01 - Video Title.mkv
         Season 00 = Specials (individual videos not in playlists)
+        season_name = Optional custom season folder name (e.g., playlist title)
         """
         safe_channel = self._sanitize(channel_name)
         
         # Season 00 = Specials folder
         if season_number == 0:
             season_dir = os.path.join(download_path, safe_channel, "Specials")
+        elif season_name:
+            # Use custom season name (e.g., playlist title)
+            safe_season_name = self._sanitize(season_name)
+            season_dir = os.path.join(download_path, safe_channel, f"Season {season_number:02d} - {safe_season_name}")
         else:
             season_dir = os.path.join(download_path, safe_channel, f"Season {season_number:02d}")
         

@@ -72,6 +72,7 @@ def background_download(video_id: str, channel_id: int):
         # Check if video belongs to any monitored playlists
         monitored_playlists = db.query(Playlist).filter_by(channel_id=channel_id, monitored=True).all()
         assigned_to_playlist = False
+        playlist_title = None
         
         for playlist in monitored_playlists:
             # Check if video is in this playlist
@@ -85,6 +86,7 @@ def background_download(video_id: str, channel_id: int):
                 video.season_number = playlist.season_number
                 video.episode_number = episode_num
                 video.playlist_id = playlist.playlist_id
+                playlist_title = playlist.title
                 assigned_to_playlist = True
                 db.commit()
                 break
@@ -107,7 +109,8 @@ def background_download(video_id: str, channel_id: int):
             video.season_number,
             video.episode_number,
             settings.get('namingFormat', 'standard'),
-            settings.get('customNaming')
+            settings.get('customNaming'),
+            playlist_title  # Pass playlist title as season name
         )
         
         video.downloaded = True
@@ -467,7 +470,8 @@ def download_playlist_videos(playlist_id: str, channel_id: int):
                         playlist.season_number,
                         idx,
                         settings.get('namingFormat', 'standard'),
-                        settings.get('customNaming')
+                        settings.get('customNaming'),
+                        playlist.title  # Pass playlist title as season name
                     )
                     
                     video.downloaded = True
