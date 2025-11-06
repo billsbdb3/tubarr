@@ -23,6 +23,22 @@ class Channel(Base):
     
     videos = relationship('Video', back_populates='channel')
 
+class Playlist(Base):
+    __tablename__ = 'playlists'
+    
+    id = Column(Integer, primary_key=True)
+    playlist_id = Column(String, unique=True)
+    channel_id = Column(Integer, ForeignKey('channels.id'))
+    title = Column(String)
+    monitored = Column(Boolean, default=False)
+    download_path = Column(String)
+    quality = Column(String, default='1080p')
+    season_number = Column(Integer, default=1)
+    added = Column(DateTime, default=datetime.utcnow)
+    last_sync = Column(DateTime)
+    
+    channel = relationship('Channel')
+
 class Video(Base):
     __tablename__ = 'videos'
     
@@ -36,6 +52,9 @@ class Video(Base):
     file_size = Column(Integer)
     download_status = Column(String, default='pending')
     duration = Column(Integer)
+    season_number = Column(Integer, default=1)
+    episode_number = Column(Integer)
+    playlist_id = Column(String)
     
     channel = relationship('Channel', back_populates='videos')
 

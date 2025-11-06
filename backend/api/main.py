@@ -14,7 +14,7 @@ import os
 import glob
 import json
 
-from backend.models import Base, Channel, Video, History
+from backend.models import Base, Channel, Video, History, Playlist
 from backend.services.downloader import Downloader
 from backend.services.monitor import Monitor
 
@@ -50,40 +50,64 @@ def get_db():
 def background_download(video_id: str, channel_id: int):
     db = SessionLocal()
     try:
-        # Fetch video info first
-        ydl_opts = {'quiet': True}
-        video_title = "Unknown"
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
-                video_title = info.get('title', 'Unknown')
-            except:
-                pass
-        
         video = db.query(Video).filter_by(video_id=video_id, channel_id=channel_id).first()
         if not video:
-            video = Video(
-                video_id=video_id,
-                channel_id=channel_id,
-                title=video_title,
-                publish_date=datetime.now(),
-                download_status='downloading'
-            )
-            db.add(video)
-            db.commit()
+            ydl_opts = {'quiet': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
+                video = Video(
+                    video_id=video_id,
+                    channel_id=channel_id,
+                    title=info.get('title', 'Unknown'),
+                    publish_date=datetime.now(),
+                    download_status='downloading',
+                    season_number=0  # Default to Season 00 for individual videos
+                )
+                db.add(video)
+                db.commit()
         else:
-            video.title = video_title
             video.download_status = 'downloading'
             db.commit()
         
+        # Check if video belongs to any monitored playlists
+        monitored_playlists = db.query(Playlist).filter_by(channel_id=channel_id, monitored=True).all()
+        assigned_to_playlist = False
+        
+        for playlist in monitored_playlists:
+            # Check if video is in this playlist
+            monitor = Monitor(db)
+            playlist_videos = monitor.get_playlist_videos(f'https://www.youtube.com/playlist?list={playlist.playlist_id}')
+            video_ids_in_playlist = [v['video_id'] for v in playlist_videos]
+            
+            if video_id in video_ids_in_playlist:
+                # Find episode number in playlist
+                episode_num = next((i+1 for i, v in enumerate(playlist_videos) if v['video_id'] == video_id), 1)
+                video.season_number = playlist.season_number
+                video.episode_number = episode_num
+                video.playlist_id = playlist.playlist_id
+                assigned_to_playlist = True
+                db.commit()
+                break
+        
+        # If not in any playlist, assign to Season 00 with sequential episode number
+        if not assigned_to_playlist and not video.episode_number:
+            video.season_number = 0
+            video.episode_number = db.query(Video).filter_by(channel_id=channel_id, season_number=0).count()
+            db.commit()
+        
         channel = db.query(Channel).filter_by(id=channel_id).first()
+        settings = get_settings()
         downloader = Downloader()
         
         path = downloader.download_video(
             video_id,
             channel.channel_name,
-            channel.download_path,
-            channel.quality
+            channel.download_path or settings.get('defaultPath', '/downloads'),
+            channel.quality,
+            video.season_number,
+            video.episode_number,
+            settings.get('namingFormat', 'standard'),
+            settings.get('customNaming')
         )
         
         video.downloaded = True
@@ -221,11 +245,14 @@ def preview_channel(channel_id: str):
             'videos': videos
         }
 
-@app.get("/api/v1/channel", response_model=List[ChannelResponse])
+@app.get("/api/v1/channel")
 def get_channels(db: Session = Depends(get_db)):
     channels = db.query(Channel).all()
     result = []
     for ch in channels:
+        video_count = db.query(Video).filter_by(channel_id=ch.id).count()
+        downloaded_count = db.query(Video).filter_by(channel_id=ch.id, downloaded=True).count()
+        
         ch_dict = {
             'id': ch.id,
             'channel_name': ch.channel_name,
@@ -234,7 +261,9 @@ def get_channels(db: Session = Depends(get_db)):
             'monitored': ch.monitored,
             'quality': ch.quality,
             'added': ch.added,
-            'thumbnail': ch.thumbnail
+            'thumbnail': ch.thumbnail,
+            'video_count': video_count,
+            'downloaded_count': downloaded_count
         }
         result.append(ch_dict)
     return result
@@ -305,15 +334,31 @@ def get_channel_playlists(channel_id: int, db: Session = Depends(get_db)):
             for entry in info['entries']:
                 if entry:
                     count = 0
+                    downloaded_count = 0
                     try:
                         pl_info = ydl.extract_info(f'https://www.youtube.com/playlist?list={entry.get("id")}', download=False)
                         count = pl_info.get('playlist_count', len(pl_info.get('entries', [])))
+                        
+                        # Get actual video IDs from playlist and check if downloaded
+                        if pl_info.get('entries'):
+                            video_ids = [v.get('id') for v in pl_info['entries'] if v and v.get('id')]
+                            downloaded_count = db.query(Video).filter(
+                                Video.video_id.in_(video_ids),
+                                Video.downloaded == True
+                            ).count()
                     except:
                         pass
+                    
+                    # Check if monitored
+                    pl_db = db.query(Playlist).filter_by(playlist_id=entry.get('id')).first()
+                    monitored = pl_db.monitored if pl_db else False
+                    
                     playlists.append({
                         'playlist_id': entry.get('id'),
                         'title': entry.get('title'),
-                        'video_count': count
+                        'video_count': count,
+                        'monitored': monitored,
+                        'downloaded_count': downloaded_count
                     })
         return playlists
 
@@ -335,6 +380,106 @@ def get_playlist_videos(playlist_id: str, db: Session = Depends(get_db)):
         })
     
     return result
+
+@app.post("/api/v1/playlist/{playlist_id}/monitor")
+def monitor_playlist(playlist_id: str, channel_id: int, download_all: bool = True, background_tasks: BackgroundTasks = None, db: Session = Depends(get_db)):
+    channel = db.query(Channel).filter_by(id=channel_id).first()
+    if not channel:
+        raise HTTPException(404, "Channel not found")
+    
+    # Check if already monitored
+    existing = db.query(Playlist).filter_by(playlist_id=playlist_id).first()
+    if existing:
+        existing.monitored = True
+        db.commit()
+        return {"status": "already_monitored"}
+    
+    # Get playlist info
+    monitor = Monitor(db)
+    ydl_opts = {'quiet': True, 'extract_flat': True}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(f'https://www.youtube.com/playlist?list={playlist_id}', download=False)
+        
+        playlist = Playlist(
+            playlist_id=playlist_id,
+            channel_id=channel_id,
+            title=info.get('title'),
+            monitored=True,
+            download_path=channel.download_path,
+            quality=channel.quality,
+            season_number=db.query(Playlist).filter_by(channel_id=channel_id).count() + 1
+        )
+        db.add(playlist)
+        db.commit()
+        
+        # Download all videos in playlist if requested
+        if download_all and background_tasks:
+            background_tasks.add_task(download_playlist_videos, playlist_id, channel_id)
+        
+        return {"status": "monitoring", "playlist_id": playlist_id, "downloading": download_all}
+
+@app.post("/api/v1/playlist/{playlist_id}/unmonitor")
+def unmonitor_playlist(playlist_id: str, db: Session = Depends(get_db)):
+    playlist = db.query(Playlist).filter_by(playlist_id=playlist_id).first()
+    if playlist:
+        playlist.monitored = False
+        db.commit()
+    return {"status": "unmonitored"}
+
+def download_playlist_videos(playlist_id: str, channel_id: int):
+    db = SessionLocal()
+    try:
+        channel = db.query(Channel).filter_by(id=channel_id).first()
+        playlist = db.query(Playlist).filter_by(playlist_id=playlist_id).first()
+        if not channel or not playlist:
+            return
+        
+        monitor = Monitor(db)
+        videos = monitor.get_playlist_videos(f'https://www.youtube.com/playlist?list={playlist_id}')
+        settings = get_settings()
+        downloader = Downloader()
+        
+        for idx, vid in enumerate(videos, 1):
+            video = db.query(Video).filter_by(video_id=vid['video_id']).first()
+            if not video:
+                video = Video(
+                    video_id=vid['video_id'],
+                    channel_id=channel_id,
+                    title=vid['title'],
+                    publish_date=datetime.now(),
+                    season_number=playlist.season_number,
+                    episode_number=idx,
+                    playlist_id=playlist_id
+                )
+                db.add(video)
+                db.commit()
+            
+            if not video.downloaded:
+                try:
+                    video.download_status = 'downloading'
+                    db.commit()
+                    
+                    path = downloader.download_video(
+                        video.video_id,
+                        channel.channel_name,
+                        playlist.download_path or settings.get('defaultPath', '/downloads'),
+                        playlist.quality,
+                        playlist.season_number,
+                        idx,
+                        settings.get('namingFormat', 'standard'),
+                        settings.get('customNaming')
+                    )
+                    
+                    video.downloaded = True
+                    video.download_path = path
+                    video.download_status = 'completed'
+                    db.commit()
+                except Exception as e:
+                    video.download_status = 'failed'
+                    db.commit()
+                    print(f"Failed to download {video.title}: {e}")
+    finally:
+        db.close()
 
 @app.post("/api/v1/channel", response_model=ChannelResponse)
 def add_channel(channel: ChannelCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
@@ -543,7 +688,9 @@ def get_settings():
         "defaultQuality": "1080p",
         "autoSync": False,
         "syncInterval": 15,
-        "theme": "dark"
+        "theme": "dark",
+        "namingFormat": "standard",
+        "customNaming": "{channel} - S{season:00}E{episode:000} - {title}"
     }
 
 @app.post("/api/v1/settings")

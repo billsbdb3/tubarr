@@ -97,11 +97,19 @@ class Monitor:
             new_videos = self.check_channel(channel)
             for video in new_videos:
                 try:
+                    # Assign episode number
+                    if not video.episode_number:
+                        video.episode_number = self.db.query(Video).filter_by(channel_id=channel.id).count()
+                        self.db.commit()
+                    
                     path = self.downloader.download_video(
                         video.video_id,
                         channel.channel_name,
                         channel.download_path,
-                        channel.quality
+                        channel.quality,
+                        video.season_number,
+                        video.episode_number,
+                        'standard'
                     )
                     video.downloaded = True
                     video.download_path = path

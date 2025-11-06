@@ -26,13 +26,18 @@ function App() {
   const [queue, setQueue] = useState([]);
   const [history, setHistory] = useState([]);
   const [settingsTab, setSettingsTab] = useState('general');
+  const [channelModal, setChannelModal] = useState(null);
+  const [selectedVideos, setSelectedVideos] = useState(new Set());
+  const [playlistModal, setPlaylistModal] = useState(null);
   const [settings, setSettings] = useState({
     apiKey: '',
     defaultPath: '/downloads',
     defaultQuality: '1080p',
     autoSync: true,
     syncInterval: 15,
-    theme: 'dark'
+    theme: 'dark',
+    namingFormat: 'standard',
+    customNaming: '{channel} - S{season:00}E{episode:000} - {title}'
   });
   const [newChannel, setNewChannel] = useState({
     channel_url: '',
@@ -76,6 +81,17 @@ function App() {
         setChannelDetail(res.data);
       }, 5000);
       return () => clearInterval(interval);
+    } else if (view === 'playlist-detail' && playlistDetail && playlistDetail.length > 0) {
+      // Poll playlist detail for updates
+      const interval = setInterval(async () => {
+        loadQueue();
+        const playlistId = playlistDetail[0]?.playlist_id;
+        if (playlistId) {
+          const res = await axios.get(`/api/v1/playlist/${playlistId}`);
+          setPlaylistDetail(res.data);
+        }
+      }, 5000);
+      return () => clearInterval(interval);
     } else {
       // Poll queue for badge on all other views
       const interval = setInterval(() => {
@@ -83,7 +99,7 @@ function App() {
       }, 5000);
       return () => clearInterval(interval);
     }
-  }, [view, channelDetail?.channel?.id, sortBy, filterBy]);
+  }, [view, channelDetail?.channel?.id, playlistDetail, sortBy, filterBy]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', settings.theme);
@@ -149,26 +165,58 @@ function App() {
   };
 
   const addChannelFromSearch = async (result) => {
+    setChannelModal({
+      channel_url: result.channel_url,
+      channel_id: result.channel_id,
+      channel_name: result.channel_name,
+      thumbnail: result.thumbnail,
+      monitored: true,
+      quality: settings.defaultQuality || '1080p',
+      download_path: settings.defaultPath || '/downloads'
+    });
+  };
+
+  const confirmAddChannel = async () => {
     try {
-      setAddingChannel(result.channel_id);
+      setAddingChannel(channelModal.channel_id);
       const response = await axios.post('/api/v1/channel', {
-        channel_url: result.channel_url,
-        download_path: settings.defaultPath || '/downloads',
-        quality: '1080p',
-        monitored: true
+        channel_url: channelModal.channel_url,
+        download_path: channelModal.download_path,
+        quality: channelModal.quality,
+        monitored: channelModal.monitored
       });
       await loadChannels();
+      setChannelModal(null);
       setAddingChannel(null);
-      // Show the new channel immediately
-      viewChannelDetail(response.data);
-      // Show notification that videos are being fetched
-      setTimeout(() => {
-        alert('Channel added! Videos are being fetched in the background. Refresh the page in a minute to see all videos.');
-      }, 500);
+      if (channelModal.monitored) {
+        viewChannelDetail(response.data);
+      }
     } catch (error) {
       console.error('Error adding channel:', error);
       alert('Failed to add channel: ' + (error.response?.data?.detail || error.message));
       setAddingChannel(null);
+    }
+  };
+
+  const confirmPlaylist = async () => {
+    try {
+      if (playlistModal.monitored) {
+        await axios.post(`/api/v1/playlist/${playlistModal.playlist_id}/unmonitor`);
+        alert('Playlist unmonitored');
+      } else {
+        await axios.post(`/api/v1/playlist/${playlistModal.playlist_id}/monitor?channel_id=${channelDetail.channel.id}&download_all=${playlistModal.downloadAll}`);
+        if (playlistModal.downloadAll) {
+          alert(`Monitoring playlist and downloading all ${playlistModal.video_count} videos in background!`);
+        } else {
+          alert('Playlist is now monitored. New videos will be downloaded automatically.');
+        }
+      }
+      setPlaylistModal(null);
+      // Reload playlists to show updated status
+      const playlistRes = await axios.get(`/api/v1/channel/${channelDetail.channel.id}/playlists`);
+      setPlaylists(playlistRes.data);
+    } catch (error) {
+      alert('Failed: ' + error.message);
     }
   };
 
@@ -229,7 +277,9 @@ function App() {
 
   const viewPlaylist = async (playlistId) => {
     const res = await axios.get(`/api/v1/playlist/${playlistId}`);
-    setPlaylistDetail(res.data);
+    // Add playlist_id to each video for reference
+    const videosWithPlaylistId = res.data.map(v => ({...v, playlist_id: playlistId}));
+    setPlaylistDetail(videosWithPlaylistId);
     setView('playlist-detail');
   };
 
@@ -307,6 +357,14 @@ function App() {
       if (channelDetail) {
         const res = await axios.get(`/api/v1/channel/${channelDetail.channel.id}`);
         setChannelDetail(res.data);
+      }
+      if (playlistDetail) {
+        // Reload playlist detail
+        const playlistId = playlistDetail[0]?.playlist_id;
+        if (playlistId) {
+          const res = await axios.get(`/api/v1/playlist/${playlistId}`);
+          setPlaylistDetail(res.data);
+        }
       }
     }
   };
@@ -435,19 +493,42 @@ function App() {
           </div>
 
           <div className="card-grid">
-            {channels.map(channel => (
-              <div key={channel.id} className="card" onClick={() => viewChannelDetail(channel)}>
-                {channel.thumbnail ? (
-                  <img src={`/api/v1/proxy/image?url=${encodeURIComponent(channel.thumbnail)}`} alt={channel.channel_name} style={{aspectRatio: '1', borderRadius: '50%'}} />
-                ) : (
-                  <div style={{width: '100%', aspectRatio: '1', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', fontWeight: 'bold', color: 'white'}}>
-                    {channel.channel_name.charAt(0)}
-                  </div>
-                )}
-                <h3>{channel.channel_name}</h3>
-                <p>{channel.quality} • {channel.monitored ? 'Monitored' : 'Paused'}</p>
-              </div>
-            ))}
+            {channels.map(channel => {
+              // Calculate status color
+              const totalVideos = channel.video_count || 0;
+              const downloadedVideos = channel.downloaded_count || 0;
+              const hasDownloading = queue.some(q => q.channel_id === channel.id);
+              
+              let statusColor = '#6c757d'; // gray default
+              if (hasDownloading) {
+                statusColor = '#9b59b6'; // purple - downloading
+              } else if (channel.monitored && downloadedVideos < totalVideos) {
+                statusColor = '#e74c3c'; // red - missing episodes (monitored)
+              } else if (!channel.monitored && downloadedVideos < totalVideos) {
+                statusColor = '#f39c12'; // orange - missing episodes (not monitored)
+              } else if (downloadedVideos === totalVideos && totalVideos > 0) {
+                statusColor = channel.monitored ? '#5d9cec' : '#27ae60'; // blue - continuing (monitored), green - ended (not monitored)
+              }
+              
+              return (
+                <div 
+                  key={channel.id} 
+                  className="card" 
+                  onClick={() => viewChannelDetail(channel)}
+                  style={{'--status-color': statusColor}}
+                >
+                  {channel.thumbnail ? (
+                    <img src={`/api/v1/proxy/image?url=${encodeURIComponent(channel.thumbnail)}`} alt={channel.channel_name} style={{aspectRatio: '1', borderRadius: '50%'}} />
+                  ) : (
+                    <div style={{width: '100%', aspectRatio: '1', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', fontWeight: 'bold', color: 'white'}}>
+                      {channel.channel_name.charAt(0)}
+                    </div>
+                  )}
+                  <h3>{channel.channel_name}</h3>
+                  <p>{channel.quality} • {channel.monitored ? 'Monitored' : 'Paused'}</p>
+                </div>
+              );
+            })}
           </div>
         </>
       )}
@@ -639,23 +720,74 @@ function App() {
                 <h3>Playlists</h3>
               </div>
               <div className="card-grid">
-                {playlists.map(playlist => (
-                  <div 
-                    key={playlist.playlist_id} 
-                    className="playlist-card" 
-                    onClick={() => viewPlaylist(playlist.playlist_id)}
-                  >
-                    <h4>📁 {playlist.title}</h4>
-                    <p>{playlist.video_count} videos</p>
-                  </div>
-                ))}
+                {playlists.map(playlist => {
+                  // Calculate status color
+                  const totalVideos = playlist.video_count || 0;
+                  const downloadedVideos = playlist.downloaded_count || 0;
+                  
+                  let statusColor = '#6c757d'; // gray default
+                  if (playlist.monitored && downloadedVideos < totalVideos) {
+                    statusColor = '#e74c3c'; // red - missing episodes (monitored)
+                  } else if (!playlist.monitored && downloadedVideos < totalVideos && downloadedVideos > 0) {
+                    statusColor = '#f39c12'; // orange - missing episodes (not monitored)
+                  } else if (downloadedVideos === totalVideos && totalVideos > 0) {
+                    statusColor = playlist.monitored ? '#5d9cec' : '#27ae60'; // blue - continuing (monitored), green - ended (not monitored)
+                  }
+                  
+                  return (
+                    <div 
+                      key={playlist.playlist_id} 
+                      className="playlist-card"
+                      style={{'--status-color': statusColor}}
+                    >
+                      <div onClick={() => viewPlaylist(playlist.playlist_id)} style={{cursor: 'pointer'}}>
+                        <h4>
+                          {playlist.monitored && '✓ '}
+                          📁 {playlist.title}
+                        </h4>
+                        <p>{playlist.video_count} videos • {playlist.downloaded_count || 0} downloaded</p>
+                      </div>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPlaylistModal({
+                            playlist_id: playlist.playlist_id,
+                            title: playlist.title,
+                            video_count: playlist.video_count,
+                            monitored: playlist.monitored || false,
+                            downloadAll: false
+                          });
+                        }}
+                        style={{marginTop: '10px', width: '100%', fontSize: '12px', padding: '5px'}}
+                      >
+                        {playlist.monitored ? 'Manage Playlist' : 'Add Playlist'}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
 
           <div className="section-header">
             <h3>Videos ({channelDetail.loaded_videos} of {channelDetail.total_videos})</h3>
-            <div style={{display: 'flex', gap: '10px'}}>
+            <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+              {selectedVideos.size > 0 && (
+                <>
+                  <span style={{fontSize: '14px', color: 'var(--text-secondary)'}}>{selectedVideos.size} selected</span>
+                  <button onClick={() => {
+                    selectedVideos.forEach(vid => downloadVideoById(vid));
+                    setSelectedVideos(new Set());
+                  }} style={{padding: '5px 10px'}}>Download Selected</button>
+                  <button onClick={() => {
+                    if (confirm(`Delete ${selectedVideos.size} videos?`)) {
+                      selectedVideos.forEach(vid => deleteVideo(vid));
+                      setSelectedVideos(new Set());
+                    }
+                  }} className="danger" style={{padding: '5px 10px'}}>Delete Selected</button>
+                  <button onClick={() => setSelectedVideos(new Set())} style={{padding: '5px 10px', background: 'var(--bg-secondary)'}}>Clear</button>
+                </>
+              )}
               <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{width: 'auto'}}>
                 <option value="date_desc">Newest First</option>
                 <option value="date_asc">Oldest First</option>
@@ -670,7 +802,21 @@ function App() {
           </div>
           <div className="video-grid">
             {channelDetail.videos.map(video => (
-              <div key={video.video_id} className="video-card">
+              <div key={video.video_id} className="video-card" style={{position: 'relative'}}>
+                <input 
+                  type="checkbox" 
+                  checked={selectedVideos.has(video.video_id)}
+                  onChange={(e) => {
+                    const newSelected = new Set(selectedVideos);
+                    if (e.target.checked) {
+                      newSelected.add(video.video_id);
+                    } else {
+                      newSelected.delete(video.video_id);
+                    }
+                    setSelectedVideos(newSelected);
+                  }}
+                  style={{position: 'absolute', top: '10px', left: '10px', width: '20px', height: '20px', cursor: 'pointer', zIndex: 10}}
+                />
                 <img src={video.thumbnail} alt={video.title} />
                 <div className="video-card-content">
                   <h4>{video.title}</h4>
@@ -874,30 +1020,49 @@ function App() {
               <h3 style={{marginBottom: '20px'}}>Media Management</h3>
               
               <div style={{marginBottom: '20px'}}>
-                <label style={{display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold'}}>File Naming</label>
-                <input 
-                  type="text" 
-                  defaultValue="{Channel Name}/{Video Title} [{Video ID}]"
-                  style={{width: '100%'}} 
-                />
-                <p style={{fontSize: '12px', color: 'var(--text-secondary)', marginTop: '5px'}}>Available tokens: {'{Channel Name}'}, {'{Video Title}'}, {'{Video ID}'}, {'{Upload Date}'}</p>
+                <label style={{display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold'}}>File Naming Format</label>
+                <select 
+                  value={settings.namingFormat}
+                  onChange={(e) => setSettings({...settings, namingFormat: e.target.value})}
+                  style={{width: '100%', marginBottom: '10px'}}
+                >
+                  <option value="standard">Standard: Channel - S01E01 - Title</option>
+                  <option value="scene">Scene: Channel.S01E01.Title</option>
+                  <option value="plex">Plex: Channel - s01e01 - Title</option>
+                  <option value="custom">Custom Pattern</option>
+                </select>
               </div>
 
-              <div style={{marginBottom: '20px'}}>
-                <label style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                  <input type="checkbox" defaultChecked />
-                  <span>Create channel folders</span>
-                </label>
-              </div>
+              {settings.namingFormat === 'custom' && (
+                <div style={{marginBottom: '20px'}}>
+                  <label style={{display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold'}}>Custom Pattern</label>
+                  <input 
+                    type="text" 
+                    value={settings.customNaming || '{channel} - S{season:00}E{episode:000} - {title}'}
+                    onChange={(e) => setSettings({...settings, customNaming: e.target.value})}
+                    style={{width: '100%', marginBottom: '5px'}} 
+                  />
+                  <p style={{fontSize: '12px', color: 'var(--text-secondary)', marginTop: '5px'}}>
+                    Tokens: {'{channel}'}, {'{title}'}, {'{season:00}'}, {'{episode:000}'}, {'{id}'}, {'{date}'}
+                  </p>
+                  <p style={{fontSize: '12px', color: 'var(--text-secondary)', marginTop: '5px'}}>
+                    Example: {settings.customNaming?.replace('{channel}', 'Linus Tech Tips').replace('{season:00}', '01').replace('{episode:000}', '042').replace('{title}', 'This GPU is INSANE').replace('{id}', 'dQw4w9WgXcQ').replace('{date}', '2025-01-15') || 'Enter pattern above'}
+                  </p>
+                </div>
+              )}
 
-              <div style={{marginBottom: '20px'}}>
-                <label style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                  <input type="checkbox" />
-                  <span>Delete empty folders</span>
-                </label>
-              </div>
+              {settings.namingFormat !== 'custom' && (
+                <div style={{marginBottom: '20px', padding: '10px', background: 'var(--bg-secondary)', borderRadius: '4px'}}>
+                  <div style={{fontSize: '12px', color: 'var(--text-secondary)'}}>Preview:</div>
+                  <div style={{fontSize: '14px', marginTop: '5px'}}>
+                    {settings.namingFormat === 'standard' && 'Linus Tech Tips - S01E042 - This GPU is INSANE.mkv'}
+                    {settings.namingFormat === 'scene' && 'Linus.Tech.Tips.S01E042.This.GPU.is.INSANE.mkv'}
+                    {settings.namingFormat === 'plex' && 'Linus Tech Tips - s01e42 - This GPU is INSANE.mkv'}
+                  </div>
+                </div>
+              )}
 
-              <button>Save Settings</button>
+              <button onClick={saveSettings}>Save Settings</button>
             </div>
           )}
 
@@ -976,6 +1141,104 @@ function App() {
         </>
       )}
       </div>
+
+      {channelModal && (
+        <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000}}>
+          <div style={{background: 'var(--bg-primary)', padding: '30px', borderRadius: '8px', maxWidth: '500px', width: '90%'}}>
+            <h2 style={{marginBottom: '20px'}}>Add Channel</h2>
+            
+            <div style={{display: 'flex', gap: '15px', marginBottom: '20px', alignItems: 'center'}}>
+              {channelModal.thumbnail && (
+                <img src={channelModal.thumbnail} alt="" style={{width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover'}} />
+              )}
+              <div>
+                <div style={{fontSize: '18px', fontWeight: 'bold'}}>{channelModal.channel_name}</div>
+              </div>
+            </div>
+
+            <div style={{marginBottom: '15px'}}>
+              <label style={{display: 'block', marginBottom: '5px', fontSize: '14px'}}>Download Path</label>
+              <input 
+                type="text" 
+                value={channelModal.download_path}
+                onChange={(e) => setChannelModal({...channelModal, download_path: e.target.value})}
+                style={{width: '100%'}}
+              />
+            </div>
+
+            <div style={{marginBottom: '15px'}}>
+              <label style={{display: 'block', marginBottom: '5px', fontSize: '14px'}}>Quality</label>
+              <select 
+                value={channelModal.quality}
+                onChange={(e) => setChannelModal({...channelModal, quality: e.target.value})}
+                style={{width: '100%'}}
+              >
+                <option value="2160p">2160p (4K)</option>
+                <option value="1080p">1080p (Full HD)</option>
+                <option value="720p">720p (HD)</option>
+                <option value="480p">480p (SD)</option>
+                <option value="best">Best Available</option>
+              </select>
+            </div>
+
+            <div style={{marginBottom: '20px'}}>
+              <label style={{display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer'}}>
+                <input 
+                  type="checkbox" 
+                  checked={channelModal.monitored}
+                  onChange={(e) => setChannelModal({...channelModal, monitored: e.target.checked})}
+                />
+                <span>Monitor this channel for new videos</span>
+              </label>
+            </div>
+
+            <div style={{display: 'flex', gap: '10px', justifyContent: 'flex-end'}}>
+              <button onClick={() => setChannelModal(null)} style={{background: 'var(--bg-secondary)'}}>Cancel</button>
+              <button onClick={confirmAddChannel} disabled={addingChannel}>
+                {addingChannel ? 'Adding...' : 'Add Channel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {playlistModal && (
+        <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000}}>
+          <div style={{background: 'var(--bg-primary)', padding: '30px', borderRadius: '8px', maxWidth: '500px', width: '90%'}}>
+            <h2 style={{marginBottom: '20px'}}>{playlistModal.monitored ? 'Manage' : 'Add'} Playlist</h2>
+            
+            <div style={{marginBottom: '20px'}}>
+              <div style={{fontSize: '18px', fontWeight: 'bold', marginBottom: '5px'}}>📁 {playlistModal.title}</div>
+              <div style={{fontSize: '14px', color: 'var(--text-secondary)'}}>{playlistModal.video_count} videos</div>
+            </div>
+
+            {!playlistModal.monitored && (
+              <>
+                <div style={{marginBottom: '20px'}}>
+                  <label style={{display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer'}}>
+                    <input 
+                      type="checkbox" 
+                      checked={playlistModal.downloadAll}
+                      onChange={(e) => setPlaylistModal({...playlistModal, downloadAll: e.target.checked})}
+                    />
+                    <span>Download all existing videos now</span>
+                  </label>
+                  <p style={{fontSize: '12px', color: 'var(--text-secondary)', marginTop: '5px', marginLeft: '30px'}}>
+                    If unchecked, only new videos added to the playlist will be downloaded
+                  </p>
+                </div>
+              </>
+            )}
+
+            <div style={{display: 'flex', gap: '10px', justifyContent: 'flex-end'}}>
+              <button onClick={() => setPlaylistModal(null)} style={{background: 'var(--bg-secondary)'}}>Cancel</button>
+              <button onClick={confirmPlaylist}>
+                {playlistModal.monitored ? 'Unmonitor' : 'Monitor Playlist'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
