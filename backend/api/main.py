@@ -442,6 +442,12 @@ def download_playlist_videos(playlist_id: str, channel_id: int):
         settings = get_settings()
         downloader = Downloader()
         
+        # Get playlist thumbnail from first video
+        playlist_thumbnail = None
+        if videos and len(videos) > 0:
+            first_video_id = videos[0]['video_id']
+            playlist_thumbnail = f"https://i.ytimg.com/vi/{first_video_id}/maxresdefault.jpg"
+        
         for idx, vid in enumerate(videos, 1):
             video = db.query(Video).filter_by(video_id=vid['video_id']).first()
             if not video:
@@ -478,6 +484,13 @@ def download_playlist_videos(playlist_id: str, channel_id: int):
                     video.download_path = path
                     video.download_status = 'completed'
                     db.commit()
+                    
+                    # Download season poster on first video
+                    if idx == 1 and playlist_thumbnail:
+                        import os
+                        season_dir = os.path.dirname(path)
+                        downloader.download_season_poster(season_dir, playlist_thumbnail)
+                    
                 except Exception as e:
                     video.download_status = 'failed'
                     db.commit()

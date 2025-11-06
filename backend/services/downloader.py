@@ -34,18 +34,25 @@ class Downloader:
         season_name = Optional custom season folder name (e.g., playlist title)
         """
         safe_channel = self._sanitize(channel_name)
+        channel_dir = os.path.join(download_path, safe_channel)
+        
+        # Create show NFO if it doesn't exist
+        self._create_show_nfo(channel_dir, channel_name)
         
         # Season 00 = Specials folder
         if season_number == 0:
-            season_dir = os.path.join(download_path, safe_channel, "Specials")
+            season_dir = os.path.join(channel_dir, "Specials")
         elif season_name:
             # Use custom season name (e.g., playlist title)
             safe_season_name = self._sanitize(season_name)
-            season_dir = os.path.join(download_path, safe_channel, f"Season {season_number:02d} - {safe_season_name}")
+            season_dir = os.path.join(channel_dir, f"Season {season_number:02d} - {safe_season_name}")
         else:
-            season_dir = os.path.join(download_path, safe_channel, f"Season {season_number:02d}")
+            season_dir = os.path.join(channel_dir, f"Season {season_number:02d}")
         
         os.makedirs(season_dir, exist_ok=True)
+        
+        # Create season NFO
+        self._create_season_nfo(season_dir, season_number, season_name or f"Season {season_number}")
         
         # Use episode number or default to 1
         ep_num = episode_number or 1
@@ -123,6 +130,62 @@ class Downloader:
         
         with open(nfo_path, 'w', encoding='utf-8') as f:
             f.write(nfo_content)
+    
+    def _create_show_nfo(self, channel_dir, channel_name):
+        """Create tvshow.nfo for the channel/show"""
+        nfo_path = os.path.join(channel_dir, 'tvshow.nfo')
+        if os.path.exists(nfo_path):
+            return  # Don't overwrite existing
+        
+        os.makedirs(channel_dir, exist_ok=True)
+        
+        nfo_content = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<tvshow>
+    <title>{self._escape_xml(channel_name)}</title>
+    <originaltitle>{self._escape_xml(channel_name)}</originaltitle>
+    <showtitle>{self._escape_xml(channel_name)}</showtitle>
+    <plot>YouTube channel: {self._escape_xml(channel_name)}</plot>
+    <studio>YouTube</studio>
+    <genre>YouTube</genre>
+    <premiered>{datetime.now().strftime('%Y-%m-%d')}</premiered>
+</tvshow>"""
+        
+        with open(nfo_path, 'w', encoding='utf-8') as f:
+            f.write(nfo_content)
+    
+    def _create_season_nfo(self, season_dir, season_num, season_title):
+        """Create season.nfo for the season/playlist"""
+        nfo_path = os.path.join(season_dir, 'season.nfo')
+        if os.path.exists(nfo_path):
+            return  # Don't overwrite existing
+        
+        nfo_content = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<season>
+    <title>{self._escape_xml(season_title)}</title>
+    <seasonnumber>{season_num}</seasonnumber>
+    <plot>{self._escape_xml(season_title)}</plot>
+</season>"""
+        
+        with open(nfo_path, 'w', encoding='utf-8') as f:
+            f.write(nfo_content)
+    
+    def download_season_poster(self, season_dir, thumbnail_url):
+        """Download season poster/thumbnail"""
+        if not thumbnail_url:
+            return
+        
+        poster_path = os.path.join(season_dir, 'poster.jpg')
+        if os.path.exists(poster_path):
+            return  # Don't overwrite
+        
+        try:
+            import requests
+            response = requests.get(thumbnail_url, timeout=10)
+            if response.status_code == 200:
+                with open(poster_path, 'wb') as f:
+                    f.write(response.content)
+        except Exception as e:
+            print(f"Failed to download season poster: {e}")
     
     def _sanitize(self, name):
         """Remove invalid filesystem characters"""
