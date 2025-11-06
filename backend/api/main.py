@@ -47,6 +47,18 @@ def get_db():
     finally:
         db.close()
 
+def get_next_season_number(db: Session, channel_id: int):
+    """Get next available season number, reusing deleted season numbers"""
+    existing_seasons = db.query(Playlist.season_number).filter_by(channel_id=channel_id).order_by(Playlist.season_number).all()
+    existing_numbers = [s[0] for s in existing_seasons]
+    
+    # Find first gap in season numbers
+    for i in range(1, len(existing_numbers) + 2):
+        if i not in existing_numbers:
+            return i
+    
+    return 1  # Fallback
+
 def background_download(video_id: str, channel_id: int):
     db = SessionLocal()
     try:
@@ -110,7 +122,8 @@ def background_download(video_id: str, channel_id: int):
             video.episode_number,
             settings.get('namingFormat', 'standard'),
             settings.get('customNaming'),
-            playlist_title  # Pass playlist title as season name
+            playlist_title,  # Pass playlist title as season name
+            channel.thumbnail  # Pass channel thumbnail
         )
         
         video.downloaded = True
@@ -410,7 +423,7 @@ def monitor_playlist(playlist_id: str, channel_id: int, download_all: bool = Tru
             monitored=True,
             download_path=channel.download_path,
             quality=channel.quality,
-            season_number=db.query(Playlist).filter_by(channel_id=channel_id).count() + 1
+            season_number=get_next_season_number(db, channel_id)
         )
         db.add(playlist)
         db.commit()
@@ -477,7 +490,8 @@ def download_playlist_videos(playlist_id: str, channel_id: int):
                         idx,
                         settings.get('namingFormat', 'standard'),
                         settings.get('customNaming'),
-                        playlist.title  # Pass playlist title as season name
+                        playlist.title,  # Pass playlist title as season name
+                        channel.thumbnail  # Pass channel thumbnail
                     )
                     
                     video.downloaded = True

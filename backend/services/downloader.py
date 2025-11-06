@@ -26,7 +26,7 @@ class Downloader:
                 'thumbnail': thumbnail
             }
     
-    def download_video(self, video_id, channel_name, download_path, quality='1080p', season_number=1, episode_number=None, naming_format='standard', custom_pattern=None, season_name=None):
+    def download_video(self, video_id, channel_name, download_path, quality='1080p', season_number=1, episode_number=None, naming_format='standard', custom_pattern=None, season_name=None, channel_thumbnail=None):
         """
         Download with TV show structure:
         /downloads/Channel Name/Season 01/Channel Name - S01E01 - Video Title.mkv
@@ -37,7 +37,7 @@ class Downloader:
         channel_dir = os.path.join(download_path, safe_channel)
         
         # Create show NFO if it doesn't exist
-        self._create_show_nfo(channel_dir, channel_name)
+        self._create_show_nfo(channel_dir, channel_name, channel_thumbnail)
         
         # Season 00 = Specials folder
         if season_number == 0:
@@ -104,6 +104,13 @@ class Downloader:
             # Create NFO file for media servers
             self._create_nfo(info, season_dir, safe_channel, season_number, episode_number or 1)
             
+            # Download episode thumbnail separately for media servers
+            if info.get('thumbnail'):
+                safe_title = self._sanitize(info.get('title', 'video'))
+                ep_num = episode_number or 1
+                thumb_path = os.path.join(season_dir, f"{safe_channel} - S{season_number:02d}E{ep_num:03d} - {safe_title}-thumb.jpg")
+                self._download_image(info['thumbnail'], thumb_path)
+            
             return filename
     
     def _create_nfo(self, info, season_dir, channel_name, season_num, episode_num):
@@ -131,7 +138,7 @@ class Downloader:
         with open(nfo_path, 'w', encoding='utf-8') as f:
             f.write(nfo_content)
     
-    def _create_show_nfo(self, channel_dir, channel_name):
+    def _create_show_nfo(self, channel_dir, channel_name, channel_thumbnail=None):
         """Create tvshow.nfo for the channel/show"""
         nfo_path = os.path.join(channel_dir, 'tvshow.nfo')
         if os.path.exists(nfo_path):
@@ -152,6 +159,10 @@ class Downloader:
         
         with open(nfo_path, 'w', encoding='utf-8') as f:
             f.write(nfo_content)
+        
+        # Download channel poster
+        if channel_thumbnail:
+            self._download_image(channel_thumbnail, os.path.join(channel_dir, 'poster.jpg'))
     
     def _create_season_nfo(self, season_dir, season_num, season_title):
         """Create season.nfo for the season/playlist"""
@@ -178,14 +189,21 @@ class Downloader:
         if os.path.exists(poster_path):
             return  # Don't overwrite
         
+        self._download_image(thumbnail_url, poster_path)
+    
+    def _download_image(self, url, path):
+        """Download image from URL"""
+        if not url or os.path.exists(path):
+            return
+        
         try:
             import requests
-            response = requests.get(thumbnail_url, timeout=10)
+            response = requests.get(url, timeout=10)
             if response.status_code == 200:
-                with open(poster_path, 'wb') as f:
+                with open(path, 'wb') as f:
                     f.write(response.content)
         except Exception as e:
-            print(f"Failed to download season poster: {e}")
+            print(f"Failed to download image: {e}")
     
     def _sanitize(self, name):
         """Remove invalid filesystem characters"""
