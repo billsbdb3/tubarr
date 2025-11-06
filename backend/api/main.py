@@ -398,7 +398,13 @@ def get_playlist_videos(playlist_id: str, db: Session = Depends(get_db)):
     return result
 
 @app.post("/api/v1/playlist/{playlist_id}/monitor")
-def monitor_playlist(playlist_id: str, channel_id: int, download_all: bool = True, background_tasks: BackgroundTasks = None, db: Session = Depends(get_db)):
+async def monitor_playlist(
+    playlist_id: str, 
+    channel_id: int, 
+    download_all: bool = True, 
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: Session = Depends(get_db)
+):
     channel = db.query(Channel).filter_by(id=channel_id).first()
     if not channel:
         raise HTTPException(404, "Channel not found")
