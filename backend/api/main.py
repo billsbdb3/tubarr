@@ -462,12 +462,17 @@ def download_playlist_videos(playlist_id: str, channel_id: int):
             playlist_thumbnail = f"https://i.ytimg.com/vi/{first_video_id}/maxresdefault.jpg"
         
         for idx, vid in enumerate(videos, 1):
+            # Skip if video_id is None (unavailable/hidden videos)
+            if not vid.get('video_id'):
+                print(f"Skipping unavailable video at position {idx}")
+                continue
+            
             video = db.query(Video).filter_by(video_id=vid['video_id']).first()
             if not video:
                 video = Video(
                     video_id=vid['video_id'],
                     channel_id=channel_id,
-                    title=vid['title'],
+                    title=vid.get('title', 'Unknown'),
                     publish_date=datetime.now(),
                     season_number=playlist.season_number,
                     episode_number=idx,
