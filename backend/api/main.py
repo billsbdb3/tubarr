@@ -399,10 +399,10 @@ def get_playlist_videos(playlist_id: str, db: Session = Depends(get_db)):
 
 @app.post("/api/v1/playlist/{playlist_id}/monitor")
 async def monitor_playlist(
+    background_tasks: BackgroundTasks,
     playlist_id: str, 
     channel_id: int, 
-    download_all: bool = True, 
-    background_tasks: BackgroundTasks = BackgroundTasks(),
+    download_all: bool = True,
     db: Session = Depends(get_db)
 ):
     channel = db.query(Channel).filter_by(id=channel_id).first()
