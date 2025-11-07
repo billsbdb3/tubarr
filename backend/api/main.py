@@ -412,15 +412,21 @@ async def monitor_playlist(
     # Check if already monitored
     existing = db.query(Playlist).filter_by(playlist_id=playlist_id).first()
     if existing:
+        print(f"Playlist {playlist_id} already monitored, updating status")
         existing.monitored = True
         db.commit()
+        if download_all and background_tasks:
+            print(f"Adding background task for existing playlist {playlist_id}")
+            background_tasks.add_task(download_playlist_videos, playlist_id, channel_id)
         return {"status": "already_monitored"}
     
     # Get playlist info
+    print(f"Fetching playlist info for {playlist_id}")
     monitor = Monitor(db)
     ydl_opts = {'quiet': True, 'extract_flat': True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(f'https://www.youtube.com/playlist?list={playlist_id}', download=False)
+        print(f"Got playlist info: {info.get('title')}")
         
         playlist = Playlist(
             playlist_id=playlist_id,
@@ -433,10 +439,14 @@ async def monitor_playlist(
         )
         db.add(playlist)
         db.commit()
+        print(f"Playlist saved to database with season {playlist.season_number}")
         
         # Download all videos in playlist if requested
+        print(f"download_all={download_all}, background_tasks={background_tasks}")
         if download_all and background_tasks:
+            print(f"Adding background task for playlist {playlist_id}, channel {channel_id}")
             background_tasks.add_task(download_playlist_videos, playlist_id, channel_id)
+            print("Background task added successfully")
         
         return {"status": "monitoring", "playlist_id": playlist_id, "downloading": download_all}
 
