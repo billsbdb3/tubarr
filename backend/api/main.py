@@ -460,8 +460,14 @@ def download_playlist_videos(playlist_id: str, channel_id: int):
         
         print(f"Fetching videos for playlist: {playlist.title}")
         monitor = Monitor(db)
-        videos = monitor.get_playlist_videos(f'https://www.youtube.com/playlist?list={playlist_id}')
-        print(f"Found {len(videos)} videos in playlist")
+        try:
+            videos = monitor.get_playlist_videos(f'https://www.youtube.com/playlist?list={playlist_id}')
+            print(f"Found {len(videos)} videos in playlist")
+        except Exception as e:
+            print(f"ERROR fetching playlist videos: {e}")
+            import traceback
+            traceback.print_exc()
+            return
         
         settings = get_settings()
         downloader = Downloader()

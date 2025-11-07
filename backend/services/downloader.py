@@ -86,13 +86,9 @@ class Downloader:
             'writethumbnail': True,
             'writeinfojson': True,
             'writedescription': True,
-            'writesubtitles': True,
-            'writeautomaticsub': True,
-            'subtitleslangs': ['en'],
             'postprocessors': [
                 {'key': 'FFmpegMetadata'},
-                {'key': 'EmbedThumbnail'},
-                {'key': 'FFmpegEmbedSubtitle'}
+                {'key': 'EmbedThumbnail'}
             ]
         }
         
