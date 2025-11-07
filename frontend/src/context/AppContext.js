@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { channelsApi } from '../api/channels';
 import { videosApi } from '../api/videos';
 import { systemApi } from '../api/system';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 const AppContext = createContext();
 
@@ -17,14 +18,12 @@ export const AppProvider = ({ children }) => {
   const [queue, setQueue] = useState([]);
   const [status, setStatus] = useState({});
   const [settings, setSettings] = useState({
-    apiKey: '',
-    defaultPath: '/downloads',
-    defaultQuality: '1080p',
-    autoSync: true,
-    syncInterval: 15,
-    theme: 'dark',
-    namingFormat: 'standard',
-    customNaming: '{channel} - S{season:00}E{episode:000} - {title}'
+    download_path: '/downloads',
+    quality: 'best',
+    download_subtitles: false,
+    embed_metadata: true,
+    check_interval: 60,
+    max_concurrent: 3
   });
 
   useEffect(() => {
@@ -38,14 +37,10 @@ export const AppProvider = ({ children }) => {
     loadSettings();
   }, []);
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', settings.theme);
-  }, [settings.theme]);
-
   const loadChannels = async () => {
     try {
-      const res = await channelsApi.getAll();
-      setChannels(res.data);
+      const data = await channelsApi.getAll();
+      setChannels(data);
     } catch (error) {
       console.error('Failed to load channels:', error);
     }
@@ -53,8 +48,8 @@ export const AppProvider = ({ children }) => {
 
   const loadQueue = async () => {
     try {
-      const res = await videosApi.getQueue();
-      setQueue(res.data);
+      const data = await videosApi.getQueue();
+      setQueue(data);
     } catch (error) {
       console.error('Failed to load queue:', error);
     }
@@ -62,8 +57,8 @@ export const AppProvider = ({ children }) => {
 
   const loadStatus = async () => {
     try {
-      const res = await systemApi.getStatus();
-      setStatus(res.data);
+      const data = await systemApi.getStatus();
+      setStatus(data);
     } catch (error) {
       console.error('Failed to load status:', error);
     }
@@ -71,35 +66,39 @@ export const AppProvider = ({ children }) => {
 
   const loadSettings = async () => {
     try {
-      const res = await systemApi.getSettings();
-      setSettings(prev => ({ ...prev, ...res.data }));
+      const data = await systemApi.getSettings();
+      setSettings(prev => ({ ...prev, ...data }));
     } catch (error) {
       console.error('Failed to load settings:', error);
     }
   };
 
-  const saveSettings = async (newSettings) => {
-    try {
-      await systemApi.updateSettings(newSettings);
-      setSettings(newSettings);
-    } catch (error) {
-      console.error('Failed to save settings:', error);
-      throw error;
+  const handleWebSocketMessage = useCallback((data) => {
+    if (data.type === 'queue_update') {
+      setQueue(data.queue);
+    } else if (data.type === 'channel_update') {
+      loadChannels();
+    } else if (data.type === 'status_update') {
+      setStatus(data.status);
     }
-  };
+  }, []);
+
+  const wsUrl = `ws://${window.location.host}/api/v1/ws`;
+  useWebSocket(wsUrl, handleWebSocketMessage);
 
   const value = {
     view,
     setView,
     channels,
     setChannels,
-    loadChannels,
+    refreshChannels: loadChannels,
     queue,
-    loadQueue,
+    setQueue,
+    refreshQueue: loadQueue,
     status,
-    loadStatus,
+    refreshStatus: loadStatus,
     settings,
-    saveSettings
+    refreshSettings: loadSettings
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

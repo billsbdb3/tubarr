@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +17,7 @@ import json
 from backend.models import Base, Channel, Video, History, Playlist
 from backend.services.downloader import Downloader
 from backend.services.monitor import Monitor
+from backend.services.websocket_manager import ws_manager
 
 app = FastAPI(title="Tubarr", version="1.0.2")
 
@@ -960,6 +961,16 @@ scheduler = BackgroundScheduler()
 # def shutdown_event():
 #     scheduler.shutdown()
 scheduler.start()
+
+# WebSocket endpoint
+@app.websocket("/api/v1/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
 
 # Serve frontend
 @app.get("/")

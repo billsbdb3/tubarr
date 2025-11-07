@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { ChannelList } from './components/views/ChannelList';
 import { ChannelDetail } from './components/views/ChannelDetail';
+import { ActivityView } from './components/views/ActivityView';
+import { SearchView } from './components/views/SearchView';
+import { SettingsView } from './components/views/SettingsView';
 import './App.css';
 
 function AppContent() {
@@ -67,26 +70,11 @@ function AppContent() {
           />
         )}
 
-        {view === 'activity' && (
-          <div>
-            <h2>Activity View - Coming Soon</h2>
-            <p>This will show queue and history</p>
-          </div>
-        )}
+        {view === 'activity' && <ActivityView />}
 
-        {view === 'search' && (
-          <div>
-            <h2>Search View - Coming Soon</h2>
-            <p>This will allow searching for new channels</p>
-          </div>
-        )}
+        {view === 'search' && <SearchView />}
 
-        {view === 'settings' && (
-          <div>
-            <h2>Settings View - Coming Soon</h2>
-            <p>This will show all settings</p>
-          </div>
-        )}
+        {view === 'settings' && <SettingsView />}
       </div>
     </div>
   );

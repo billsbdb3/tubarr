@@ -1,16 +1,33 @@
 import api from './client';
 
 export const videosApi = {
-  getAll: () => api.get('/video'),
+  getAll: async () => {
+    const res = await api.get('/video');
+    return res.data;
+  },
   
-  download: (videoId) => api.post(`/video/${videoId}/download`),
+  download: async (videoId) => {
+    const res = await api.post(`/video/${videoId}/download`);
+    return res.data;
+  },
   
-  downloadById: (youtubeVideoId, channelId) => 
-    api.post(`/video/download/${youtubeVideoId}`, { channel_id: channelId }),
+  downloadById: async (youtubeVideoId, channelId) => {
+    const res = await api.post(`/video/download/${youtubeVideoId}`, { channel_id: channelId });
+    return res.data;
+  },
   
-  delete: (videoId) => api.delete(`/video/${videoId}`),
+  delete: async (videoId) => {
+    const res = await api.delete(`/video/${videoId}`);
+    return res.data;
+  },
   
-  getQueue: () => api.get('/queue'),
+  getQueue: async () => {
+    const res = await api.get('/queue');
+    return res.data;
+  },
   
-  getHistory: () => api.get('/history')
+  getHistory: async () => {
+    const res = await api.get('/history');
+    return res.data;
+  }
 };
