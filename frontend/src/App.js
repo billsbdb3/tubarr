@@ -72,8 +72,10 @@ function App() {
         const data = JSON.parse(event.data);
         if (data.type === 'queue_update') {
           setQueue(data.queue);
+          loadStatus(); // Update status when queue changes
         } else if (data.type === 'channel_update') {
           loadChannels();
+          loadStatus(); // Update status when channels change
         }
       } catch (error) {
         console.error('WebSocket message error:', error);

@@ -79,6 +79,12 @@ def background_download(video_id: str, channel_id: int):
                 db.add(video)
                 db.commit()
         else:
+            # Update title if it's still the placeholder
+            if video.title == "Fetching info...":
+                ydl_opts = {'quiet': True}
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
+                    video.title = info.get('title', 'Unknown')
             video.download_status = 'downloading'
             db.commit()
         
