@@ -273,7 +273,8 @@ def get_channels(db: Session = Depends(get_db)):
     channels = db.query(Channel).all()
     result = []
     for ch in channels:
-        video_count = db.query(Video).filter_by(channel_id=ch.id).count()
+        # Only count videos discovered through monitoring (have duration metadata)
+        video_count = db.query(Video).filter_by(channel_id=ch.id).filter(Video.duration.isnot(None)).count()
         downloaded_count = db.query(Video).filter_by(channel_id=ch.id, downloaded=True).count()
         
         ch_dict = {
@@ -297,8 +298,8 @@ def get_channel_detail(channel_id: int, limit: int = 25, offset: int = 0, sort: 
     if not channel:
         raise HTTPException(404, "Channel not found")
     
-    # Build query
-    query = db.query(Video).filter_by(channel_id=channel_id)
+    # Build query - only show videos discovered through monitoring (have duration)
+    query = db.query(Video).filter_by(channel_id=channel_id).filter(Video.duration.isnot(None))
     
     # Apply filters
     if filter == 'downloaded':
