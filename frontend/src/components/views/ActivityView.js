@@ -1,124 +1,53 @@
-import React, { useState, useEffect } from 'react';
-import { useApp } from '../../context/AppContext';
-import { videosApi } from '../../api/videos';
-import { formatDuration, getStatusColor } from '../../utils/formatters';
+import React from 'react';
 
-export function ActivityView() {
-  const { queue } = useApp();
-  const [history, setHistory] = useState([]);
-  const [activeTab, setActiveTab] = useState('queue');
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (activeTab === 'history') {
-      loadHistory();
-    }
-  }, [activeTab]);
-
-  const loadHistory = async () => {
-    setLoading(true);
-    try {
-      const data = await videosApi.getHistory();
-      setHistory(data);
-    } catch (error) {
-      console.error('Failed to load history:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const activeQueue = queue.filter(v => 
-    v.status === 'Pending' || v.status.includes('Downloading') || v.status === 'Queued'
-  );
-
+export function ActivityView({ queue, history }) {
   return (
-    <div className="activity-view">
-      <h2>Activity</h2>
-      
-      <div className="tabs">
-        <button 
-          className={activeTab === 'queue' ? 'active' : ''} 
-          onClick={() => setActiveTab('queue')}
-        >
-          Queue ({activeQueue.length})
-        </button>
-        <button 
-          className={activeTab === 'history' ? 'active' : ''} 
-          onClick={() => setActiveTab('history')}
-        >
-          History
-        </button>
+    <>
+      <div className="page-header">
+        <h2>Activity</h2>
+        <div className="stats">
+          <span style={{color: '#5d9cec'}}>🔄 Auto-refreshing every 1s</span>
+        </div>
       </div>
 
-      {activeTab === 'queue' && (
-        <div className="queue-list">
-          {activeQueue.length === 0 ? (
-            <p className="empty-state">No active downloads</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>Channel</th>
-                  <th>Duration</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeQueue.map(video => (
-                  <tr key={video.id}>
-                    <td>{video.title}</td>
-                    <td>{video.channel_name}</td>
-                    <td>{formatDuration(video.duration)}</td>
-                    <td>
-                      <span className={`status ${getStatusColor(video.status)}`}>
-                        {video.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
+      <div className="section-header">
+        <h3>Queue ({queue.filter(v => v.status === 'Pending' || v.status.includes('Downloading') || v.status === 'Queued').length})</h3>
+      </div>
+      <div className="activity-section" style={{marginBottom: '30px'}}>
+        {queue.filter(v => v.status === 'Pending' || v.status.includes('Downloading') || v.status === 'Queued').length === 0 ? (
+          <p style={{padding: '20px', textAlign: 'center', color: 'var(--text-secondary)'}}>No active downloads</p>
+        ) : (
+          queue.filter(v => v.status === 'Pending' || v.status.includes('Downloading') || v.status === 'Queued').map(item => (
+            <div key={item.id} style={{padding: '15px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+              <div style={{flex: 1}}>
+                <h4 style={{fontSize: '14px', marginBottom: '5px'}}>{item.title}</h4>
+                <p style={{fontSize: '12px', color: 'var(--text-secondary)'}}>{item.channel_name}</p>
+              </div>
+              <span style={{fontSize: '12px', color: '#f39c12'}}>⏳ {item.status || 'Pending'}</span>
+            </div>
+          ))
+        )}
+      </div>
 
-      {activeTab === 'history' && (
-        <div className="history-list">
-          {loading ? (
-            <p>Loading history...</p>
-          ) : history.length === 0 ? (
-            <p className="empty-state">No download history</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>Channel</th>
-                  <th>Duration</th>
-                  <th>Status</th>
-                  <th>Downloaded</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map(video => (
-                  <tr key={video.id}>
-                    <td>{video.title}</td>
-                    <td>{video.channel_name}</td>
-                    <td>{formatDuration(video.duration)}</td>
-                    <td>
-                      <span className={`status ${getStatusColor(video.status)}`}>
-                        {video.status}
-                      </span>
-                    </td>
-                    <td>{new Date(video.downloaded_at).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-    </div>
+      <div className="section-header">
+        <h3>Recently Downloaded ({history.length})</h3>
+      </div>
+      <div className="activity-section">
+        {history.length === 0 ? (
+          <p style={{padding: '20px', textAlign: 'center', color: 'var(--text-secondary)'}}>No download history</p>
+        ) : (
+          history.map(item => (
+            <div key={item.id} style={{padding: '15px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+              <div style={{flex: 1}}>
+                <h4 style={{fontSize: '14px', marginBottom: '5px'}}>{item.video_title}</h4>
+                <p style={{fontSize: '12px', color: 'var(--text-secondary)'}}>{item.channel_name} • {new Date(item.downloaded_at).toLocaleString()}</p>
+              </div>
+              <span style={{fontSize: '12px', color: '#5d9cec'}}>✅ Downloaded</span>
+            </div>
+          ))
+        )}
+      </div>
+    </>
   );
 }
+
